@@ -1,5 +1,6 @@
 import {
   Body,
+  Session,
   Controller,
   Delete,
   Get,
@@ -7,25 +8,58 @@ import {
   Patch,
   Post,
   Query,
+  HttpException,
+  HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UsersService } from './users.service';
-import { User } from './user.entity';
 import { UpdateUserDto } from './dtos/update-user.dto';
+import { Serialize } from './interceptors/serialize.interceptor';
+import { UserDto } from './dtos/user.dto';
+import { AuthService } from './auth.service';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { User } from './user.entity';
+import { AuthGuard } from './guards/auth.guard';
 
+@Serialize(UserDto)
 @Controller('auth')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly authService: AuthService,
+  ) {}
 
-  @Post('signup')
-  createUser(@Body() body: CreateUserDto) {
-    return this.usersService.create(body.email, body.password);
+  @UseGuards(AuthGuard)
+  @Get('/whoamI')
+  whoAmI(@CurrentUser() user: User) {
+    return user;
+    // if (!session.userId) {
+    //   throw new HttpException(`You're not signed in.`, HttpStatus.FORBIDDEN);
+    // }
+    // return this.usersService.findOne(session.userId);
   }
 
-  // @Post('login')
-  // loginUser(@Body() body: CreateUserDto) {
-  //   return this.usersService.login(body.email, body.password);
-  // }
+  @Post('signup')
+  async createUser(@Body() body: CreateUserDto, @Session() session: any) {
+    const user = await this.authService.signup(body.email, body.password);
+    session.userId = user.id;
+    return user;
+  }
+
+  @Post('login')
+  async loginUser(@Body() body: CreateUserDto, @Session() session: any) {
+    const user = await this.authService.signin(body.email, body.password);
+    session.userId = user.id;
+    return user;
+  }
+
+  @Post('logout')
+  signOut(@Session() session: any) {
+    session.userId = null;
+  }
+
+  // @UseInterceptors(SerializeInterceptor)
   @Get(':id')
   findUser(@Param('id') id: number) {
     return this.usersService.findOne(id);
